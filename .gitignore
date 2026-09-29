@@ -1,0 +1,89 @@
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# uv
+.uv/
+.uv-cache/
+
+# Keep lockfile and python version pinned (commit uv.lock + .python-version)
+# uv.lock
+# .python-version
+
+# Environment variables / secrets - keep .env.example, ignore real values
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pem
+*.key
+*.p12
+secrets/
+
+# FastAPI / Uvicorn / local dev
+*.log
+logs/
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
+# Type checkers / linters
+.mypy_cache/
+.dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Temporary files
+*.tmp
+*.bak
+*.orig
+
+
+# venv
+.venv/
+
+
+# wiki
+wiki/

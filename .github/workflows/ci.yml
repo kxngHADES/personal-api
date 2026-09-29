@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - dev
+  pull_request:
+    branches:
+      - dev
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # Dummy values so app.core.config's fail-fast validation passes at import
+    # time. No real Supabase project or database is used by the test suite.
+    env:
+      SUPABASE_URL: https://project.supabase.com
+      SUPABASE_ANON_KEY: anon-key
+      SUPABASE_SERVICE_ROLE_KEY: service-role-key
+      DATABASE_URL: postgresql+psycopg2://postgres:password@localhost:5432/postgres
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Run tests
+        run: uv run pytest -v
+
+  deploy:
+    name: Deploy to Render (dev)
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    environment:
+      name: dev
+      url: https://personal-api-07qp.onrender.com
+
+    env:
+      RENDER_SERVICE_ID: srv-datnh8navr4c73e8iiu0
+      RENDER_SERVICE_URL: https://personal-api-07qp.onrender.com
+
+    steps:
+      - name: Trigger Render deploy
+        id: trigger
+        run: |
+          echo "Triggering deploy for service $RENDER_SERVICE_ID ..."
+
+          response=$(curl -sS -w '\n%{http_code}' -X POST \
+            "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Accept: application/json" \
+            -H "Content-Type: application/json")
+
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+
+          echo "Render API response (HTTP $http_code):"
+          echo "$body"
+
+          if [ "$http_code" -ge 300 ]; then
+            echo "::error::Failed to trigger Render deploy (HTTP $http_code)"
+            exit 1
+          fi
+
+          deploy_id=$(echo "$body" | jq -r '.id')
+          echo "Deploy triggered: $deploy_id"
+          echo "deploy_id=$deploy_id" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for deploy to finish
+        run: |
+          deploy_id="${{ steps.trigger.outputs.deploy_id }}"
+          echo "Watching deploy $deploy_id ..."
+
+          max_attempts=60   # 60 * 15s = 15 minutes
+          attempt=0
+
+          while [ "$attempt" -lt "$max_attempts" ]; do
+            attempt=$((attempt + 1))
+
+            body=$(curl -sS \
+              "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys/$deploy_id" \
+              -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+              -H "Accept: application/json")
+
+            status=$(echo "$body" | jq -r '.status')
+            echo "[attempt $attempt/$max_attempts] deploy $deploy_id status: $status"
+
+            case "$status" in
+              live)
+                echo "Deploy is live at $RENDER_SERVICE_URL"
+                exit 0
+                ;;
+              build_failed|update_failed|canceled|deactivated|pre_deploy_failed)
+                echo "::error::Render deploy failed with status: $status"
+                echo "$body"
+                exit 1
+                ;;
+            esac
+
+            sleep 15
+          done
+
+          echo "::error::Timed out waiting for Render deploy $deploy_id to finish"
+          exit 1
+
+      - name: Smoke test deployed service
+        run: |
+          echo "Checking $RENDER_SERVICE_URL/health ..."
+          curl -sS -f "$RENDER_SERVICE_URL/health" | jq . || {
+            echo "::error::Health check failed against $RENDER_SERVICE_URL"
+            exit 1
+          }
